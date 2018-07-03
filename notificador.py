@@ -28,6 +28,12 @@ def normal_clamped(mu, sigma):
         x = 0
     return x
 
+def getThird(item):
+    return item[2]
+
+def getSecond(item):
+    return float(item[1][:-1])
+
 def simular_eleccion(votos_candidatos: list, restantes: float, simulations: int):
     """
 
@@ -62,6 +68,8 @@ def save_to_file(prefix, datos):
         f.write(datos)
 
 def handle_analisis_nacional_pdte(datos):
+    print()
+    print()
     print(f"Actualización PREP nacional presidente a las {time.strftime('%H:%M:%S')}")
     try:
         prep_nal = json.loads(datos)
@@ -70,25 +78,41 @@ def handle_analisis_nacional_pdte(datos):
         return
     capturadas = prep_nal["actasContabilizadas"]["total"]
     esperadas  = prep_nal["totalActas"]
+    pct        = capturadas / esperadas
     print(f"    Corte al {prep_nal['horaCorte']}")
     print(f"    Casillas contabilizadas: {capturadas}/{esperadas}")
     print(f"    Porcentaje avance PREP: {prep_nal['actasContabilizadas']['porcentaje']}%")
 
     resultados = prep_nal["votosCandidatoPartidoCoalicion"]
     candidatos = []
-    candidatos.append(("Ricardo Anaya Cortés (PAN+PRD+MC)", f"{resultados[0]['porcentaje']}%", resultados[0]['total']))
-    candidatos.append(("José Antonio Meade Kuribreña (PRI+PVEM+PANAL)", f"{resultados[1]['porcentaje']}%", resultados[1]['total']))
-    candidatos.append(("Andrés Manuel López Obrador (MORENA+PT+PES)", f"{resultados[2]['porcentaje']}%", resultados[2]['total']))
-    candidatos.append(("Jaime Heliodoro Rodríguez Calderón", f"{resultados[4]['porcentaje']}%", resultados[4]['total']))
-    candidatos.append(("Margarita Ester Zavala Gómez del Campo", f"{resultados[3]['porcentaje']}%", resultados[3    ]['total']))
-    candidatos.append(("Candidaturas no registradas", f"{resultados[5]['porcentaje']}%", resultados[5]['total']))
-    candidatos.append(("Votos nulos", f"{resultados[6]['porcentaje']}%", resultados[6]['total']))
+    candidatos.append(["Ricardo Anaya Cortés (PAN+PRD+MC)", f"{resultados[0]['porcentaje']}%", resultados[0]['total']])
+    candidatos.append(["José Antonio Meade Kuribreña (PRI+PVEM+PANAL)", f"{resultados[1]['porcentaje']}%", resultados[1]['total']])
+    candidatos.append(["Andrés Manuel López Obrador (MORENA+PT+PES)", f"{resultados[2]['porcentaje']}%", resultados[2]['total']])
+    candidatos.append(["Jaime Heliodoro Rodríguez Calderón", f"{resultados[4]['porcentaje']}%", resultados[4]['total']])
+    candidatos.append(["Margarita Ester Zavala Gómez del Campo", f"{resultados[3]['porcentaje']}%", resultados[3]['total']])
+    candidatos.append(["Candidaturas no registradas", f"{resultados[5]['porcentaje']}%", resultados[5]['total']])
+    candidatos.append(["Votos nulos", f"{resultados[6]['porcentaje']}%", resultados[6]['total']])
 
-    print(tabulate(candidatos, headers=["Candidato a la Presidencia de la República", "Porcentaje", "Votos"]))
+    candidatos.sort(key=getThird, reverse=True)
+
+    restantes = (prep_nal["totalVotos"] / pct) - prep_nal["totalVotos"]
+    votos_candidatos = []
+
+    for candidato in candidatos:
+        votos_candidatos.append(candidato[2])
+
+    proyecciones = simular_eleccion(votos_candidatos, restantes, 20000)
+
+    for idx, proyeccion in enumerate(proyecciones):
+        candidatos[idx].append(f"{proyeccion*100:.4f}%")
+
+    print(tabulate(candidatos, headers=["Candidato a la Presidencia de la República", "Porcentaje", "Votos", "Probabilidad de ganar"]))
 
     save_to_file("prep_nacional_presidente", datos)
 
 def handle_analisis_nacional_sen(datos):
+    print()
+    print()
     print(f"Actualización PREP nacional senadores a las {time.strftime('%H:%M:%S')}")
     try:
         prep_nal = json.loads(datos)
@@ -96,23 +120,29 @@ def handle_analisis_nacional_sen(datos):
         print("Error al procesar datos del PREP Nacional Senadores")
         return
     resultados = prep_nal["entidadesGanadaPartidoCoalicion"]
+    votos      = prep_nal["votosCandidatoPartidoCoalicion"]
     resultados_primera = prep_nal["entidadesGanadasPrimeraMinoria"]
     partidos = []
-    partidos.append(("Coalición Por México al Frente (PAN+PRD+MC)", resultados[9]['total'] + resultados_primera[9]['total']))
-    partidos.append(("Coalición Todos por México (PRI+PVEM+PANAL)", resultados[10]['total'] + resultados_primera[10]['total']))
-    partidos.append(("Coalición Juntos Haremos Historia (MORENA+PT+PES)", resultados[11]['total'] + resultados_primera[11]['total']))
+    partidos.append(["Coalición Por México al Frente (PAN+PRD+MC)", resultados[9]['total']*2 + resultados_primera[9]['total'], votos[9]['porcentaje']])
+    partidos.append(["Coalición Todos por México (PRI+PVEM+PANAL)", resultados[10]['total']*2 + resultados_primera[10]['total'], votos[10]['porcentaje']])
+    partidos.append(["Coalición Juntos Haremos Historia (MORENA+PT+PES)", resultados[11]['total']*2 + resultados_primera[11]['total'], votos[11]['porcentaje']])
 
-    total = 0
+    total_mr = 0
+    total_rp = 0
 
-    for partido in partidos:
-        total += partido[1]
+    for idx, partido in enumerate(partidos):
+        partidos[idx][2] = partidos[idx][1] + int(32 * (0.01 *partidos[idx][2]))
+        total_mr += partido[1]
+        total_rp += partidos[idx][2]
 
-    partidos.append(("Total", total))
+    partidos.append(("Total", total_mr, total_rp))
 
-    print(tabulate(partidos, ["Coalición", "Senadores"]))
+    print(tabulate(partidos, ["Coalición", "Senadores MR", "Senadores MR + RP (estimado)"]))
     save_to_file("prep_nacional_senadores", datos)
 
 def handle_analisis_nacional_dip(datos):
+    print()
+    print()
     print(f"Actualización PREP nacional diputados a las {time.strftime('%H:%M:%S')}")
     try:
         prep_nal = json.loads(datos)
@@ -120,22 +150,28 @@ def handle_analisis_nacional_dip(datos):
         print("Error al procesar datos del PREP Nacional Diputados")
         return
     resultados = prep_nal["entidadesGanadaPartidoCoalicion"]
+    votos = prep_nal["votosCandidatoPartidoCoalicion"]
     partidos = []
-    partidos.append(("Coalición Por México al Frente (PAN+PRD+MC)", resultados[9]['total']))
-    partidos.append(("Coalición Todos por México (PRI+PVEM+PANAL)", resultados[10]['total']))
-    partidos.append(("Coalición Juntos Haremos Historia (MORENA+PT+PES)", resultados[11]['total']))
+    partidos.append(["Coalición Por México al Frente (PAN+PRD+MC)", resultados[9]['total'], votos[9]['porcentaje']])
+    partidos.append(["Coalición Todos por México (PRI+PVEM+PANAL)", resultados[10]['total'], votos[9]['porcentaje']])
+    partidos.append(["Coalición Juntos Haremos Historia (MORENA+PT+PES)", resultados[11]['total'], votos[9]['porcentaje']])
 
-    total = 0
+    total_mr = 0
+    total_rp = 0
 
-    for partido in partidos:
-        total += partido[1]
+    for idx, partido in enumerate(partidos):
+        partidos[idx][2] = partidos[idx][1] + int(200 * (0.01 * partidos[idx][2]))
+        total_mr += partido[1]
+        total_rp += partidos[idx][2]
 
-    partidos.append(("Total", total))
+    partidos.append(("Total", total_mr, total_rp))
 
-    print(tabulate(partidos, ["Coalición", "Diputados"]))
+    print(tabulate(partidos, ["Coalición", "Diputados MR", "Diputados MR + RP (estimado)"]))
     save_to_file("prep_nacional_diputados", datos)
 
 def handle_analisis_colima(datos):
+    print()
+    print()
     print(f"Actualización PREP estatal Colima a las {time.strftime('%H:%M:%S')}")
     try:
         colima_json = json.loads(datos)
@@ -147,7 +183,7 @@ def handle_analisis_colima(datos):
     esperadas  = casillas['total']
     pct        = (capturadas / esperadas) * 100
     print(f"    Casillas contabilizadas: {capturadas}/{esperadas}")
-    print(f"    Porcentaje avance PREP: {pct:.2}%")
+    print(f"    Porcentaje avance PREP: {pct:.4}%")
 
     ayuntamientos = colima_json['votes_towns']
 
@@ -160,23 +196,38 @@ def handle_analisis_colima(datos):
             locho  = int(ayto["mc"])
             chapula = int(ayto["nva"])
             nulos   = int(ayto["nulo"])
-            indeps  = int(ayto["in1"]) + int(ayto["in2"]) + int(ayto["in3"]) + int(ayto["in4"]) + int(ayto["in5"]) + int(ayto["in6"])
             totales = ayto["total"]
 
-            resultados_ayto_col.append(("Héctor Insúa García (PAN+PRD)", f"{(insua/totales)*100:.4}%", insua))
-            resultados_ayto_col.append(("Walter Alejandro Oldenbourg Ochoa (PRI+PVEM)", f"{(walter/totales)*100:.4}%", walter))
-            resultados_ayto_col.append(("Rafael Briceño Alcaraz (MORENA+PT+PES)", f"{(rafael/totales)*100:.4}%", rafael))
-            resultados_ayto_col.append(("Leoncio Alfonso Morán Sánchez (MC)", f"{(locho/totales)*100:.4}%", locho))
-            resultados_ayto_col.append(("Roberto Chapula de la Mora (PANAL)", f"{(chapula/totales)*100:.4}%", chapula))
-            resultados_ayto_col.append(("Candidatos independientes", f"{(indeps/totales)*100:.4}%", indeps))
-            resultados_ayto_col.append(("Votos nulos", f"{(nulos/totales)*100:.4}%", nulos))
-            resultados_ayto_col.append(("Votos totales", f"{(totales/totales)*100:.4}%", totales))
+            resultados_ayto_col.append(["Héctor Insúa García (PAN+PRD)", f"{(insua/totales)*100:.4}%", insua])
+            resultados_ayto_col.append(["Walter Alejandro Oldenbourg Ochoa (PRI+PVEM)", f"{(walter/totales)*100:.4}%", walter])
+            resultados_ayto_col.append(["Rafael Briceño Alcaraz (MORENA+PT+PES)", f"{(rafael/totales)*100:.4}%", rafael])
+            resultados_ayto_col.append(["Leoncio Alfonso Morán Sánchez (MC)", f"{(locho/totales)*100:.4}%", locho])
+            resultados_ayto_col.append(["Roberto Chapula de la Mora (PANAL)", f"{(chapula/totales)*100:.4}%", chapula])
+            resultados_ayto_col.append(["Votos nulos", f"{(nulos/totales)*100:.4}%", nulos])
 
-            print(tabulate(resultados_ayto_col, headers=["Candidato a la presidencia municipal de Colima", "Porcentaje", "Votos"]))
+            resultados_ayto_col.sort(key=getThird, reverse=True)
+
+            resultados_ayto_col.append(["Votos totales", f"{(totales/totales)*100:.4}%", totales])
+
+            restantes = ((100 * totales) / pct) - totales
+            votos_candidatos = []
+
+            for candidato in resultados_ayto_col:
+                if candidato[0] != "Votos totales":
+                    votos_candidatos.append(candidato[2])
+
+            proyecciones = simular_eleccion(votos_candidatos, restantes, 20000)
+
+            for idx, proyeccion in enumerate(proyecciones):
+                resultados_ayto_col[idx].append(f"{proyeccion*100:.4f}%")
+
+            print(tabulate(resultados_ayto_col, headers=["Candidato a la presidencia municipal de Colima", "Porcentaje", "Votos", "Probabilidad de ganar"]))
 
     save_to_file("prep_colima", datos)
 
 def handle_analisis_jalisco(datos):
+    print()
+    print()
     print(f"Actualización PREP estatal Jalisco a las {time.strftime('%H:%M:%S')}")
     try:
         soup = BeautifulSoup(datos, "html.parser")
@@ -191,12 +242,13 @@ def handle_analisis_jalisco(datos):
         return
     pct = (capturadas/esperadas) * 100
     print(f"    Casillas contabilizadas: {capturadas}/{esperadas}")
-    print(f"    Porcentaje avance PREP: {pct:.2}%")
+    print(f"    Porcentaje avance PREP: {pct:.4}%")
     candidatos = []
     for candidato in soup.find_all(class_="gobernatura"):
         nombre = candidato.find_all("p")[0].text
         pct    = candidato.find_all(class_="color-oficial")[0].text
         candidatos.append((nombre, pct))
+    candidatos.sort(key=getSecond, reverse=True)
     print(tabulate(candidatos, headers=["Candidato a la gubernatura de Jalisco", "Porcentaje"]))
     save_to_file("prep_jalisco", datos)
 
